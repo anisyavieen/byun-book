@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createSessionClient } from "@/lib/supabase/server";
 
@@ -77,4 +78,79 @@ export async function gantiPassword(prevStateOrFormData, maybeFormData) {
   }
 
   return { success: "Password berhasil diganti." };
+}
+
+export async function tambahProduk(prevStateOrFormData, maybeFormData) {
+  const formData =
+    maybeFormData instanceof FormData ? maybeFormData : prevStateOrFormData;
+
+  const nama = formData?.get("nama")?.trim();
+  const hargaRaw = formData?.get("harga");
+  const kategori = formData?.get("kategori")?.trim() || "";
+  const foto_url = formData?.get("foto_url")?.trim() || "";
+  const deskripsi = formData?.get("deskripsi")?.trim() || "";
+
+  const savedData = {
+    nama: formData?.get("nama") || "",
+    harga: hargaRaw || "",
+    kategori,
+    foto_url,
+    deskripsi,
+  };
+
+  // Validasi login di server
+  const supabase = await createSessionClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return {
+      error: "Kamu harus login sebagai admin untuk menambah produk.",
+      data: savedData,
+      timestamp: Date.now(),
+    };
+  }
+
+  // Validasi input
+  if (!nama) {
+    return {
+      error: "Nama produk wajib diisi.",
+      data: savedData,
+      timestamp: Date.now(),
+    };
+  }
+
+  const harga = Number(hargaRaw);
+  if (!hargaRaw || isNaN(harga) || harga <= 0) {
+    return {
+      error: "Harga harus berupa angka lebih dari 0.",
+      data: savedData,
+      timestamp: Date.now(),
+    };
+  }
+
+  // Simpan ke Supabase
+  const { error: insertError } = await supabase.from("produk").insert([
+    {
+      nama,
+      harga: Math.round(harga),
+      kategori: kategori || null,
+      foto_url: foto_url || null,
+      deskripsi: deskripsi || null,
+    },
+  ]);
+
+  if (insertError) {
+    return {
+      error: insertError.message || "Gagal menyimpan produk ke database.",
+      data: savedData,
+      timestamp: Date.now(),
+    };
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/");
+  redirect("/admin");
 }
